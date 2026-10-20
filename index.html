@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PathStruct – Hybrid Pathway + Structure Explorer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/3dmol@latest/build/3Dmol-min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+    
+    :root {
+      --bg: #0a0e17;
+      --panel: #111827;
+      --border: #1f2937;
+      --accent: #06b6d4;
+      --accent2: #8b5cf6;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+    }
+    
+    * { box-sizing: border-box; }
+    
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      min-height: 100vh;
+    }
+    
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    
+    .glass {
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+    }
+    
+    .gradient-text {
+      background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .pathway-node {
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .pathway-node:hover {
+      transform: scale(1.05);
+      filter: brightness(1.2);
+    }
+    .pathway-node.active {
+      box-shadow: 0 0 0 3px var(--accent), 0 0 20px rgba(6, 182, 212, 0.4);
+    }
+    
+    .enzyme-card {
+      transition: all 0.25s ease;
+      border: 1px solid transparent;
+    }
+    .enzyme-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(6, 182, 212, 0.15);
+    }
+    .enzyme-card.selected {
+      border-color: var(--accent);
+      background: rgba(6, 182, 212, 0.08);
+    }
+    
+    #viewer3d {
+      width: 100%;
+      height: 420px;
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #0d1117;
+    }
+    
+    .loading-spinner {
+      border: 3px solid rgba(6, 182, 212, 0.2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    .fade-in {
+      animation: fadeIn 0.4s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .map-container {
+      background: radial-gradient(ellipse at center, #0f172a 0%, #0a0e17 70%);
+      border-radius: 16px;
+      overflow: auto;
+      min-height: 420px;
+      padding: 12px;
+    }
+    
+    .svg-map {
+      width: 100%;
+      min-width: 780px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    
+    .svg-map svg {
+      display: block;
+      margin: 0 auto;
+    }
+    
+    .tooltip {
+      position: absolute;
+      background: #1f2937;
+      color: #e5e7eb;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      pointer-events: none;
+      z-index: 100;
+      border: 1px solid #374151;
+      white-space: nowrap;
+    }
+    
+    .bottleneck-badge {
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-weight: 600;
+    }
+    
+    .tab-btn {
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      background: rgba(6, 182, 212, 0.15);
+      color: #06b6d4;
+      border-bottom: 2px solid #06b6d4;
+    }
+    
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #111827; }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+  </style>
+</head>
+<body class="antialiased">
+  <!-- Header -->
+  <header class="glass sticky top-0 z-50 border-b border-gray-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+          <i class="fas fa-dna text-white text-lg"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight">Path<span class="gradient-text">Struct</span></h1>
+          <p class="text-xs text-gray-500 -mt-0.5">Hybrid Pathway + Structure Explorer</p>
+        </div>
+      </div>
+      <div class="hidden sm:flex items-center gap-2 text-xs text-gray-400">
+        <span class="px-2 py-1 rounded bg-gray-800 border border-gray-700">Demo v1.0</span>
+        <span class="px-2 py-1 rounded bg-emerald-900/40 text-emerald-400 border border-emerald-800">Live</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+    <!-- Search Section -->
+    <section class="mb-8">
+      <div class="glass rounded-2xl p-6 shadow-xl">
+        <h2 class="text-lg font-semibold mb-1">Explore a Pathway</h2>
+        <p class="text-sm text-gray-400 mb-4">Type a metabolic or signaling pathway name. The app returns a classic 2D map, enzyme → 3D structure links, active-site views, drug interactions, and a PathAI overview.</p>
+        
+        <div class="flex flex-col sm:flex-row gap-3">
+          <div class="relative flex-1">
+            <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-500"></i>
+            <input 
+              id="pathwayInput" 
+              type="text" 
+              placeholder="e.g. Glycolysis, TCA cycle, MAPK signaling, Pentose phosphate..." 
+              class="w-full pl-11 pr-4 py-3.5 rounded-xl bg-gray-900 border border-gray-700 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 outline-none text-sm transition"
+              autocomplete="off"
+            />
+            <div id="suggestions" class="absolute z-20 w-full mt-1 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl hidden overflow-hidden"></div>
+          </div>
+          <button 
+            id="exploreBtn" 
+            class="px-6 py-3.5 rounded-xl bg-gradient-to-r from-cyan-600 to-violet-600 hover:from-cyan-500 hover:to-violet-500 font-medium text-sm flex items-center justify-center gap-2 transition shadow-lg shadow-cyan-900/30"
+          >
+            <i class="fas fa-microscope"></i>
+            Explore Pathway
+          </button>
+        </div>
+        
+        <div class="mt-4 flex flex-wrap gap-2">
+          <span class="text-xs text-gray-500 self-center">Quick start:</span>
+          <button class="quick-btn px-3 py-1.5 text-xs rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 transition" data-pathway="glycolysis">Glycolysis</button>
+          <button class="quick-btn px-3 py-1.5 text-xs rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 transition" data-pathway="tca">TCA Cycle</button>
+          <button class="quick-btn px-3 py-1.5 text-xs rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 transition" data-pathway="ppp">Pentose Phosphate</button>
+          <button class="quick-btn px-3 py-1.5 text-xs rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 transition" data-pathway="mapk">MAPK Signaling</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Results (hidden until search) -->
+    <div id="results" class="hidden">
+      <!-- Pathway Header -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 fade-in">
+        <div>
+          <h2 id="pathwayTitle" class="text-2xl font-bold"></h2>
+          <p id="pathwaySubtitle" class="text-sm text-gray-400 mt-1"></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="enzymeCount" class="px-3 py-1 rounded-full text-xs bg-cyan-900/40 text-cyan-300 border border-cyan-800"></span>
+          <span id="structureCount" class="px-3 py-1 rounded-full text-xs bg-violet-900/40 text-violet-300 border border-violet-800"></span>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="flex border-b border-gray-800 mb-6 overflow-x-auto">
+        <button class="tab-btn active px-5 py-3 text-sm font-medium" data-tab="map">
+          <i class="fas fa-project-diagram mr-2"></i>2D Pathway Map
+        </button>
+        <button class="tab-btn px-5 py-3 text-sm font-medium text-gray-400" data-tab="enzymes">
+          <i class="fas fa-flask mr-2"></i>Enzymes & Structures
+        </button>
+        <button class="tab-btn px-5 py-3 text-sm font-medium text-gray-400" data-tab="3d">
+          <i class="fas fa-cube mr-2"></i>3D Viewer
+        </button>
+        <button class="tab-btn px-5 py-3 text-sm font-medium text-gray-400" data-tab="drugs">
+          <i class="fas fa-pills mr-2"></i>Drug Interactions
+        </button>
+        <button class="tab-btn px-5 py-3 text-sm font-medium text-gray-400" data-tab="pathai">
+          <i class="fas fa-brain mr-2"></i>PathAI Overview
+        </button>
+      </div>
+
+      <!-- Tab Panels -->
+      <div id="tab-map" class="tab-panel fade-in">
+        <div class="glass rounded-2xl p-4 map-container relative">
+          <div id="pathwayMap" class="svg-map"></div>
+          <div class="absolute bottom-3 right-3 text-xs text-gray-500 bg-gray-900/80 px-2 py-1 rounded">
+            Hover for details • Click enzyme → 3D • Teal = ions/cofactors (ATP, NAD⁺…)
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-enzymes" class="tab-panel hidden">
+        <div id="enzymeGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      </div>
+
+      <div id="tab-3d" class="tab-panel hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-2">
+            <div class="glass rounded-2xl p-4">
+              <div class="flex items-center justify-between mb-3">
+                <h3 id="viewerTitle" class="font-semibold text-sm">Select an enzyme to view structure</h3>
+                <div class="flex gap-2">
+                  <button id="btnCartoon" class="px-2.5 py-1 text-xs rounded-lg bg-cyan-900/50 text-cyan-300 border border-cyan-800">Cartoon</button>
+                  <button id="btnSurface" class="px-2.5 py-1 text-xs rounded-lg bg-gray-800 text-gray-400 border border-gray-700">Surface</button>
+                  <button id="btnSticks" class="px-2.5 py-1 text-xs rounded-lg bg-gray-800 text-gray-400 border border-gray-700">Ligand</button>
+                </div>
+              </div>
+              <div id="viewer3d"></div>
+              <p class="text-xs text-gray-500 mt-2 text-center">Rotate • Zoom • Pan — powered by 3Dmol.js</p>
+            </div>
+          </div>
+          <div>
+            <div id="structureInfo" class="glass rounded-2xl p-5 h-full">
+              <p class="text-sm text-gray-400">Select an enzyme from the map or enzyme list to load its best available 3D structure, active-site residues, and ligand poses.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drug Interactions Tab -->
+      <div id="tab-drugs" class="tab-panel hidden">
+        <div class="glass rounded-2xl p-6">
+          <div class="flex items-start gap-3 mb-5">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center flex-shrink-0">
+              <i class="fas fa-pills text-white"></i>
+            </div>
+            <div>
+              <h3 class="font-semibold text-lg">Drug & Medicine Interactions</h3>
+              <p class="text-sm text-gray-400">Approved drugs, experimental compounds, and clinical relevance for enzymes in this pathway</p>
+            </div>
+          </div>
+          <div id="drugContent" class="space-y-4"></div>
+        </div>
+      </div>
+
+      <!-- PathAI Overview Tab (formerly Structural Bottlenecks) -->
+      <div id="tab-pathai" class="tab-panel hidden">
+        <div class="glass rounded-2xl p-6">
+          <div class="flex items-start gap-3 mb-5">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center flex-shrink-0">
+              <i class="fas fa-brain text-white"></i>
+            </div>
+            <div>
+              <h3 class="font-semibold text-lg">PathAI Overview</h3>
+              <p class="text-sm text-gray-400">AI-assisted summary of structural bottlenecks, conformational flexibility, allosteric sites, and disease-relevant features</p>
+            </div>
+          </div>
+          <div id="bottleneckContent" class="space-y-4"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="emptyState" class="text-center py-16">
+      <div class="w-20 h-20 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-violet-600/20 flex items-center justify-center">
+        <i class="fas fa-project-diagram text-3xl text-cyan-400"></i>
+      </div>
+      <h3 class="text-xl font-semibold mb-2">Ready to explore</h3>
+      <p class="text-gray-400 text-sm max-w-md mx-auto">Enter a pathway name above or click a quick-start button. PathStruct will generate a hybrid 2D map + 3D structure report.</p>
+    </div>
+  </main>
+
+  <footer class="border-t border-gray-800 mt-12 py-6 text-center text-xs text-gray-500">
+    PathStruct Demo • Built for biochemistry education • Structures from RCSB PDB • Maps inspired by KEGG / Reactome
+  </footer>
+
+  <!-- PathAI Chatbot -->
+  <button id="chatToggle" class="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-cyan-500 to-violet-600 shadow-lg shadow-cyan-900/40 flex items-center justify-center text-white text-xl hover:scale-105 transition">
+    <i class="fas fa-robot"></i>
+  </button>
+
+  <div id="chatPanel" class="fixed bottom-24 right-6 z-50 w-80 sm:w-96 max-h-[70vh] flex flex-col glass rounded-2xl shadow-2xl border border-gray-700 hidden">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center">
+          <i class="fas fa-robot text-white text-sm"></i>
+        </div>
+        <div>
+          <div class="text-sm font-semibold">PathAI Assistant</div>
+          <div class="text-[10px] text-gray-500">Ask about pathways in this app</div>
+        </div>
+      </div>
+      <button id="chatClose" class="text-gray-400 hover:text-white text-sm"><i class="fas fa-times"></i></button>
+    </div>
+    <div id="chatMessages" class="flex-1 overflow-y-auto p-4 space-y-3 text-sm" style="min-height:220px;max-height:340px">
+      <div class="bg-gray-800/80 rounded-xl px-3 py-2 text-gray-300 text-xs leading-relaxed">
+        Hi! I can answer questions about <strong>Glycolysis</strong>, <strong>TCA Cycle</strong>, <strong>Pentose Phosphate</strong>, and <strong>MAPK signaling</strong> — enzymes, diseases, drugs, and structural bottlenecks.
+      </div>
+    </div>
+    <div class="p-3 border-t border-gray-700 flex gap-2">
+      <input id="chatInput" type="text" placeholder="e.g. What drugs target KRAS?" 
+        class="flex-1 px-3 py-2 rounded-xl bg-gray-900 border border-gray-700 text-sm outline-none focus:border-cyan-500" />
+      <button id="chatSend" class="px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-sm">
+        <i class="fas fa-paper-plane"></i>
+      </button>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
